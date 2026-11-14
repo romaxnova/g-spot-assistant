@@ -1,0 +1,8 @@
+# Only what the image build needs: nothing else (no .env, no database, no git history) can reach it.
+*
+!package.json
+!package-lock.json
+!.npmrc
+!tsconfig.json
+!src/
+!docker/entrypoint.sh
