@@ -30,7 +30,7 @@ A Google client for local work needs `http://localhost:8080/auth/google/callback
 
 - One topic per pull request, with tests for what changes.
 - `npm run typecheck` and `npm test` pass, and CI is green (it also builds the Docker image).
-- Update the README or `docs/SETUP.md` when behaviour or setup changes.
+- Update `docs/REFERENCE.md` or `docs/SETUP.md` when behaviour or setup changes. Keep the README short and free of jargon: it is for people who do not code.
 
 ## License
 

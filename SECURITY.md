@@ -26,5 +26,5 @@ Each copy is run by its owner for themselves and the Google accounts they link. 
 - Keep `OWNER_EMAILS` to the people who should drive Claude with these accounts.
 - Keep the Google consent screen **In production** (Testing mode expires tokens after 7 days) and do not share the OAuth client.
 - In Claude, set the tools that send, delete or share to **Ask**.
-- Rotate `TOKEN_ENCRYPTION_KEY` or the Google client secret if you think they leaked (see the README, *Operations*), and use **Disconnect all Claude sessions** on the admin page if a device is lost.
+- Rotate `TOKEN_ENCRYPTION_KEY` or the Google client secret if you think they leaked (see [Operations](docs/REFERENCE.md#operations)), and use **Disconnect all Claude sessions** on the admin page if a device is lost.
 - Update regularly: `git pull && docker compose up -d --build`, or redeploy the latest version on Railway.

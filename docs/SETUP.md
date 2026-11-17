@@ -120,5 +120,5 @@ Ask Claude: *"List my Google accounts"*, then *"Anything unread across all inbox
 - **An account says "needs re-link"**: open the admin page and click **Re-link**. This happens after a password change, when access is revoked at Google, or if the consent screen was still in Testing mode.
 - **Add or remove an account**: admin page. Unlinking revokes the grant at Google as well.
 - **Lost phone or suspicious activity**: admin page → **Disconnect all Claude sessions**, then reconnect from Claude.
-- **Rotate the encryption key or the Google client secret**: see the README, section *Operations*.
+- **Rotate the encryption key or the Google client secret**: see the [technical reference](REFERENCE.md#operations).
 - **Logs**: Railway → service → **Logs**, or `docker compose logs`. Logs never contain tokens, email or file content.
