@@ -1,3 +1,5 @@
+<img src="assets/icon.png" alt="" width="72">
+
 # G-Spot Assistant
 
 Let Claude work with your Gmail, Google Calendar, Drive and Sheets, across all your Google accounts at once.
