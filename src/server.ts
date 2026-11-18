@@ -3,7 +3,8 @@
  */
 import { loadConfig, ConfigError } from './config.js';
 import { createLogger } from './log.js';
-import { checkpoint, cleanupExpired, openDatabase } from './db.js';
+import { checkpoint, cleanupExpired, compact, fileSizes, openDatabase } from './db.js';
+import { memoryReport } from './memory.js';
 import { AccountStore } from './accounts.js';
 import { AuthStore } from './auth/store.js';
 import { ClientRegistry } from './auth/clients.js';
@@ -87,6 +88,13 @@ function main(): void {
   // Uploads from a phone on a slow connection can take minutes (Node's default cuts a request at 5).
   server.requestTimeout = 15 * 60_000;
 
+  // One line an hour, so the host's memory graph can be read against the process's own figures.
+  const logMemory = () => {
+    const sizes = fileSizes(db);
+    log.info('memory', { ...memoryReport(), dbMb: Math.round((sizes.pages * sizes.pageSize) / 104857.6) / 10, dbFreeMb: Math.round((sizes.freePages * sizes.pageSize) / 104857.6) / 10 });
+  };
+  logMemory();
+
   const housekeeping = setInterval(
     () => {
       try {
@@ -94,8 +102,11 @@ function main(): void {
         const pruned = store.pruneClients(30 * 24 * 3600);
         // Closed follow-ups are kept 30 days; dismissals outlive the longest look-back (90 days) with room to spare.
         const forgotten = followups.purgeClosedBefore(Date.now() - 30 * DAY_MS) + followups.purgeDismissalsBefore(Date.now() - 180 * DAY_MS) + schedules.purgeBefore(Date.now() - 30 * DAY_MS);
-        checkpoint(db);
+        // Staged files are deleted 24 hours after their last change: their space goes back to the system now.
+        uploads.sweep();
+        compact(db);
         if (removed || pruned || forgotten) log.debug('housekeeping', { removed, pruned, followups: forgotten });
+        logMemory();
       } catch (err) {
         log.warn('housekeeping failed', { error: err instanceof Error ? err.message : String(err) });
       }

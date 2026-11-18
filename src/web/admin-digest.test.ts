@@ -96,6 +96,13 @@ test('the digest card is on the admin page, for the owner only, listing the acco
   assert.match(html, /action="\/admin\/digest\/send"/);
 });
 
+test('the admin page shows the server\'s memory and uptime to the owner', async () => {
+  const html = await (await get('/admin', { cookie })).text();
+  assert.match(html, /<h2>Server<\/h2>/);
+  assert.match(html, /Process: \d+(\.\d)? MB resident, of which \d+(\.\d)? MB live objects/);
+  assert.match(html, /Running for \d+ (min|h|days)\./);
+});
+
 test('saving and sending need the owner and a same-origin form', async () => {
   const noSession = await post('/admin/digest', valid, { origin: ORIGIN });
   assert.equal(noSession.status, 403);
