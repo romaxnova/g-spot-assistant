@@ -18,6 +18,7 @@ import { DIGEST_LANGS, digestInbox, DigestSettingsError, WEEKDAYS, type DigestSc
 import type { Logger } from '../log.js';
 import { errorSummary } from '../log.js';
 import { esc, fmtTime, page } from './html.js';
+import { memoryReport } from '../memory.js';
 
 export interface WebDeps {
   config: Config;
@@ -325,7 +326,9 @@ ${invites.length ? `<h2>Pending invite links</h2><div class="card">${inviteCards
 ${digestCard()}
 <h2>Claude connections</h2>
 <div class="card">${families.length ? familyCards : '<p class="muted">No Claude client is connected yet. Add this server as a custom connector in claude.ai.</p>'}
-<form method="post" action="/admin/revoke-claude"><p><button class="danger" type="submit">Disconnect all Claude sessions</button> <span class="muted">Claude will have to sign in again. Use this if a device is lost.</span></p></form></div>`,
+<form method="post" action="/admin/revoke-claude"><p><button class="danger" type="submit">Disconnect all Claude sessions</button> <span class="muted">Claude will have to sign in again. Use this if a device is lost.</span></p></form></div>
+<h2>Server</h2>
+${serverCard()}`,
       }),
     );
   });
@@ -545,6 +548,15 @@ ${loopback ? '<div class="alert warn">The redirect goes to a program on this com
 
   function googleBanner(): string {
     return d.config.googleConfigured ? '' : `<div class="alert warn">${esc(GOOGLE_MISSING)}</div>`;
+  }
+
+  /** Memory and uptime, for the owner: what the host bills is the container's figure. */
+  function serverCard(): string {
+    const m = memoryReport();
+    const hours = Math.floor(process.uptime() / 3600);
+    const up = hours >= 48 ? `${Math.floor(hours / 24)} days` : hours >= 1 ? `${hours} h` : `${Math.max(1, Math.round(process.uptime() / 60))} min`;
+    const container = m.containerMb !== undefined ? `<div>Container: <strong>${m.containerMb} MB</strong> <span class="muted">(${m.containerAnonMb} MB process memory, ${m.containerFileMb} MB cached files)</span></div>` : '';
+    return `<div class="card">${container}<div>Process: ${m.rssMb} MB resident, of which ${m.heapUsedMb} MB live objects</div><div class="muted">Running for ${up}. One line with these figures goes to the logs every hour.</div></div>`;
   }
 
   function storageBanner(): string {

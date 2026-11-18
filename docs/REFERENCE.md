@@ -221,9 +221,11 @@ Tracked follow-ups need the previous key too. If a deploy goes out without it (o
 
 **Updates.** On Railway, redeploy from the latest version of the repository (a service deployed from your own fork updates when you sync the fork). With Docker: `git pull && docker compose up -d --build`. The database upgrades itself at start.
 
-**Backups.** The only state is `/data/connector.sqlite` (plus its `-wal`/`-shm` companions while the server runs; the log is folded into the main file hourly and at shutdown). It is useless without `TOKEN_ENCRYPTION_KEY`, so keep the key somewhere safe too. Losing the file costs nothing but re-linking the accounts, reconnecting Claude and the follow-ups recorded.
+**Backups.** The only state is `/data/connector.sqlite` (plus its `-wal`/`-shm` companions while the server runs; the log is folded into the main file and emptied hourly and at shutdown, and the space of deleted rows, such as cleared uploads, is given back to the disk hourly). It is useless without `TOKEN_ENCRYPTION_KEY`, so keep the key somewhere safe too. Losing the file costs nothing but re-linking the accounts, reconnecting Claude and the follow-ups recorded.
 
 **Logs.** Railway → service → Logs, or `docker compose logs`. JSON lines, metadata only.
+
+**Memory.** The server settles at about 150 to 200 MB. Two settings of the Docker image keep it there: Node starts with a 2 MB young generation (`--max-semi-space-size=2`; by default Node 24 lets it grow to 32 MB under a burst of requests and keeps it), and glibc hands blocks over 128 KB back to the system once freed (`MALLOC_MMAP_THRESHOLD_`, `MALLOC_TRIM_THRESHOLD_`, `MALLOC_ARENA_MAX=2`; by default it keeps them after each larger attachment, upload or PDF than before, so memory climbs in steps and never comes down). Without them the same traffic holds 320 to 400 MB. Run outside the image, set them yourself. Once an hour the log has a `memory` line: the process's resident memory (`rssMb`), the live JavaScript heap (`heapUsedMb`), the container's memory as the host counts it (`containerMb`, split into the process's own `containerAnonMb` and cached file pages `containerFileMb`, when the system exposes them) and the database's size (`dbMb`, of which `dbFreeMb` is unused). The admin page shows the same figures under *Server*. A heap that keeps growing from one line to the next is a leak; resident memory that rises after a large file and then stays flat is the allocator keeping memory for reuse. `npm run soak` drives the real app with a fake Google for a thousand rounds of the calls Claude makes and prints the same figures; `SOAK_MAX_GROWTH_MB=10 npm run soak` fails when the heap grows more than that.
 
 ## Development
 
@@ -267,6 +269,8 @@ src/uploads.ts           staging of files from the chat, encrypted in SQLite (up
 src/web/upload.ts        the upload page and POST /upload/:token
 src/app.ts               Express wiring: OAuth handlers, /mcp, pages, headers, rate limits
 src/server.ts            entry point, housekeeping, shutdown
+src/memory.ts            memory figures for the hourly log line and the admin page
+src/soak/memory-soak.ts  memory soak: the real app, a fake Google, the request mix, figures after each checkpoint
 ```
 
 ## Dependencies and network
