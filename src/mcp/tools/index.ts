@@ -16,6 +16,7 @@ import { sheetsTools } from './sheets.js';
 import { driveTools } from './drive.js';
 import { crossTools } from './cross.js';
 import { uploadTools } from './uploads.js';
+import { sendToLink } from './send-to-link.js';
 
 export const allTools: ToolDefinition[] = [
   ...gmailTools,
@@ -34,4 +35,5 @@ export const allTools: ToolDefinition[] = [
   ...crossTools,
   ...followupTools,
   ...uploadTools,
+  sendToLink,
 ];
