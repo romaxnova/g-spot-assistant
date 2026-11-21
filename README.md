@@ -20,7 +20,9 @@ It also keeps a list of what you are waiting for, can email you a summary of it 
 
 About 20 minutes, no coding. You need a Google account and a Claude account.
 
-1. **Start your server.** Follow [part 1 of the setup guide](docs/SETUP.md#1-deploy-the-server): on Railway it is a few clicks, and you only type your email address.
+1. **Start your server.** Press the button, sign in to Railway (no GitHub account needed), type your Google email address in Configure, and deploy. [Part 1 of the setup guide](docs/SETUP.md#1-deploy-the-server) has the details and other hosts.
+
+   [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/g-spot-assistant-gmail-calendar-drive-fo?referralCode=UpSGZQ&utm_medium=integration&utm_source=template&utm_campaign=g-spot-assistant)
 2. **Open your server's page.** It shows what is left to do, with the exact text to copy and paste.
 3. **Connect it to Google** (10 minutes, free). Google asks every private app for its own key. [Part 2 of the guide](docs/SETUP.md#2-google-cloud-about-10-minutes) shows each click; at the end you paste two values into your server's settings.
 4. **Link your Google accounts.** On your server's admin page, sign in and choose "Link an account" for each one: yours, a work account, a relative's with their agreement.
