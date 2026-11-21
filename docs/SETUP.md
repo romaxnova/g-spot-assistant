@@ -53,15 +53,16 @@ or behind a tunnel (Cloudflare Tunnel, Tailscale Funnel). `BASE_URL` is that pub
 
 ## 2. Google Cloud (about 10 minutes)
 
+**Shortcut: a key someone shares with you.** A friend who already runs this server can let yours use their Google OAuth client. Put the two values they give you in the server's variables as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, send them your server's redirect URI and domain (your server's home page shows both), and skip to part 3 once they have added them. Their Google Cloud project then signs your accounts in, but your mail, calendars and files, and the tokens to reach them, stay on your server only. If their project is ever deleted, make your own key below and replace the two values.
+
+**Sharing your key with a friend.** In your Google Cloud project, add the friend's domain under [Branding](https://console.cloud.google.com/auth/branding) → **Authorized domains**, and their redirect URI to your OAuth client under [Clients](https://console.cloud.google.com/auth/clients) → your client → **Authorized redirect URIs**; **Save** both. Then send them your client ID and client secret privately. Google lets an app it has not reviewed sign in about 100 people in all, and shows them the "unverified app" warning.
+
+
 Each copy of the server has its own Google OAuth client, in a Google Cloud project you own. It is free.
 
 1. Open <https://console.cloud.google.com/> signed in as **you@gmail.com**.
 2. Project picker (top bar) → **New project** → any name → **Create**, then select it.
-3. Enable the four APIs. Open each link and click **Enable**:
-   - Gmail API: <https://console.cloud.google.com/apis/library/gmail.googleapis.com>
-   - Google Calendar API: <https://console.cloud.google.com/apis/library/calendar-json.googleapis.com>
-   - Google Sheets API: <https://console.cloud.google.com/apis/library/sheets.googleapis.com>
-   - Google Drive API: <https://console.cloud.google.com/apis/library/drive.googleapis.com>
+3. Enable the four APIs (Gmail, Calendar, Sheets, Drive) with one link: <https://console.cloud.google.com/flows/enableapi?apiid=gmail.googleapis.com,calendar-json.googleapis.com,sheets.googleapis.com,drive.googleapis.com> → **Next** → **Enable**.
 4. Consent screen: <https://console.cloud.google.com/auth/overview> → **Get started**.
    - App name: anything, for example `G-Spot Assistant`. User support email: your address.
    - Audience: **External**. Contact email: your address. Agree, **Create**.

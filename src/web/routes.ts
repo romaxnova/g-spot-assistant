@@ -77,18 +77,47 @@ export function privacyPolicy(config: Config): string {
 <p>${contact(config)}</p></div>`;
 }
 
+/** Google Cloud pages the setup steps open, each at the step it is needed for. */
+const GCP = {
+  project: 'https://console.cloud.google.com/projectcreate',
+  // One link enables the four APIs at once (Google's "enable APIs" flow).
+  apis: 'https://console.cloud.google.com/flows/enableapi?apiid=gmail.googleapis.com,calendar-json.googleapis.com,sheets.googleapis.com,drive.googleapis.com',
+  consent: 'https://console.cloud.google.com/auth/overview',
+  branding: 'https://console.cloud.google.com/auth/branding',
+  audience: 'https://console.cloud.google.com/auth/audience',
+  client: 'https://console.cloud.google.com/auth/clients/create',
+};
+
+/** A value to paste somewhere: one tap selects all of it (no script, the pages run under a strict CSP). */
+const pick = (v: string) => `<code class="pick">${esc(v)}</code>`;
+
+/** The address Google sends sign-ins back to; whoever owns the Google key must allow it. */
+export function redirectUri(config: Config): string {
+  return `${config.baseUrl.origin}/auth/google/callback`;
+}
+
+/** For a server set up with a Google key someone shared: what to send them so that sign-in works. */
+export function sharedKeyNote(config: Config): string {
+  return `<p class="muted">Using a Google key that someone shared with you? Send them this server's two addresses, to add to their Google Cloud client: redirect URI ${pick(redirectUri(config))} and authorized domain ${pick(config.baseUrl.hostname)}.</p>`;
+}
+
 /** What is left to do on a fresh install, with this server's own addresses filled in. */
 export function setupSteps(config: Config): string {
   const origin = config.baseUrl.origin;
   const guide = config.sourceUrl.startsWith('https://github.com/') ? `${config.sourceUrl}/blob/main/docs/SETUP.md` : config.sourceUrl;
   return `<div class="alert warn">Almost there: Google sign-in is not set up yet.</div>
-<div class="card"><h2>Finish the setup</h2><ol>
-<li>In <a href="https://console.cloud.google.com/">Google Cloud</a>, create a project, enable the Gmail, Google Calendar, Google Sheets and Google Drive APIs, and set up the consent screen: audience <strong>External</strong>, then <strong>Publish app</strong> (in Testing, Google ends every link after 7 days). Its branding page asks for:
-<br>home page <code>${esc(origin)}/</code> · privacy policy <code>${esc(origin)}/privacy</code> · terms <code>${esc(origin)}/terms</code> · authorized domain <code>${esc(config.baseUrl.hostname)}</code></li>
-<li>Create an OAuth client of type <strong>Web application</strong> with this authorized redirect URI:<br><code>${esc(origin)}/auth/google/callback</code></li>
-<li>Put its client ID and client secret in this server's environment variables <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> (on Railway: the service's <strong>Variables</strong> tab), and let the server restart.</li>
+<div class="card"><h2>Someone gave you a shared Google key?</h2>
+<p>Put the two values in this server's <strong>Variables</strong> as <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> (on Railway: the service, then Variables, then deploy), and send the person who gave them this redirect URI ${pick(redirectUri(config))} and authorized domain ${pick(config.baseUrl.hostname)}. Then skip to the last two steps below.</p></div>
+<div class="card"><h2>Finish the setup with your own Google key</h2><p class="muted">About 10 minutes, free. Each link opens the right Google Cloud page; tap a grey value once to select it, then copy.</p><ol>
+<li><a href="${GCP.project}">Create a project</a> (any name), and make sure it is the one selected in the top bar.</li>
+<li><a href="${GCP.apis}">Enable the four APIs</a> (Gmail, Calendar, Sheets, Drive) in one click: <strong>Next</strong>, then <strong>Enable</strong>.</li>
+<li><a href="${GCP.consent}">Consent screen</a> → <strong>Get started</strong>: any app name, your email, audience <strong>External</strong>, then <strong>Create</strong>.</li>
+<li><a href="${GCP.branding}">Branding</a>: no logo (a logo forces Google's review). Fill in home page ${pick(`${origin}/`)} · privacy policy ${pick(`${origin}/privacy`)} · terms ${pick(`${origin}/terms`)} · authorized domain ${pick(config.baseUrl.hostname)}, then <strong>Save</strong>.</li>
+<li><a href="${GCP.audience}">Audience</a> → <strong>Publish app</strong> → <strong>Confirm</strong>, so it reads <strong>In production</strong> (in Testing, Google ends every link after 7 days). Do not ask for verification.</li>
+<li><a href="${GCP.client}">Create an OAuth client</a>: type <strong>Web application</strong>, authorized redirect URI ${pick(redirectUri(config))}, then <strong>Create</strong>. Copy the client ID and the client secret.</li>
+<li>Put them in this server's environment variables <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> (on Railway: the service's <strong>Variables</strong> tab), and let the server restart.</li>
 <li>Come back here, open the admin page and sign in with the owner's Google account (the one in <code>OWNER_EMAILS</code>), then link your Google accounts.</li>
-<li>In Claude (Settings → Connectors → Add custom connector), paste <code>${esc(config.mcpUrl.href)}</code>.</li>
+<li>In Claude (Settings → Connectors → Add custom connector), paste ${pick(config.mcpUrl.href)}.</li>
 </ol><p class="muted">Every step in detail: the <a href="${esc(guide)}">setup guide</a>.</p></div>`;
 }
 
@@ -137,7 +166,7 @@ export function createWebRouter(d: WebDeps): Router {
     res.send(
       page({
         title: d.config.serverName,
-        body: `${storageBanner()}${d.config.googleConfigured ? '' : setupSteps(d.config)}<p class="muted">Private remote MCP server. MCP endpoint: <code>${esc(d.config.mcpUrl.href)}</code></p><p><a class="btn" href="/admin">Open admin</a></p><p class="muted"><a href="/privacy">Privacy policy</a> · <a href="/terms">Terms of service</a></p>`,
+        body: `${storageBanner()}${d.config.googleConfigured ? sharedKeyNote(d.config) : setupSteps(d.config)}<p class="muted">Private remote MCP server. MCP endpoint: <code>${esc(d.config.mcpUrl.href)}</code></p><p><a class="btn" href="/admin">Open admin</a></p><p class="muted"><a href="/privacy">Privacy policy</a> · <a href="/terms">Terms of service</a></p>`,
         signedInAs: req.session?.email,
       }),
     );
