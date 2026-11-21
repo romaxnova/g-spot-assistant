@@ -30,6 +30,7 @@ h1{font-size:1.5rem;margin:0 0 8px}h2{font-size:1.15rem;margin:28px 0 8px}
 .card{border:1px solid var(--border);border-radius:10px;padding:16px 18px;background:var(--card);margin:14px 0;overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:.95rem}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--border);vertical-align:top}
 code,pre{background:var(--code);border-radius:4px;padding:2px 5px;font-size:.9em;overflow-wrap:anywhere}
+code.pick{-webkit-user-select:all;user-select:all;cursor:text}
 pre{padding:10px;overflow:auto}
 .badge{display:inline-block;border-radius:999px;padding:1px 9px;font-size:.8rem;background:var(--ok-bg);color:var(--ok-fg)}
 .badge.warn{background:var(--warn-bg);color:var(--warn-fg)}
