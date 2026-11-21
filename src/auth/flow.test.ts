@@ -317,7 +317,7 @@ test('MCP 2026-07-28: server/discover, tools/list and tools/call over the per-re
       assert.equal(client.getServerVersion()?.name, 'g-spot-assistant');
       assert.match(client.getInstructions() ?? '', /list_accounts/);
       const { tools } = await client.listTools();
-      assert.equal(tools.length, 52);
+      assert.equal(tools.length, 53);
       const call = await client.callTool({ name: 'list_accounts', arguments: {} });
       assert.ok(Array.isArray(call.content) && call.content.length > 0);
       const bad = await client.callTool({ name: 'gmail_search', arguments: {} });
@@ -331,7 +331,7 @@ test('MCP 2026-07-28: server/discover, tools/list and tools/call over the per-re
   await legacy.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp'), { requestInit: { headers: { authorization: `Bearer ${accessToken}` } } }));
   try {
     assert.equal(legacy.getNegotiatedProtocolVersion(), '2025-11-25');
-    assert.equal((await legacy.listTools()).tools.length, 52);
+    assert.equal((await legacy.listTools()).tools.length, 53);
   } finally {
     await legacy.close();
   }
@@ -348,7 +348,7 @@ test('MCP initialize and tools/list work with a valid bearer token; list_account
   const la = tools.find((t) => t.name === 'list_accounts');
   assert.ok(la);
   assert.equal(la.annotations?.readOnlyHint, true);
-  assert.equal(tools.length, 52, 'list_accounts + 47 service and follow-up tools + 4 upload tools');
+  assert.equal(tools.length, 53, 'list_accounts + 47 service and follow-up tools + 4 upload tools + send_to_link');
   for (const t of tools) {
     assert.ok(t.description && t.description.length > 20, `${t.name} has a description`);
     assert.equal(typeof t.annotations?.readOnlyHint, 'boolean', `${t.name} has readOnlyHint`);

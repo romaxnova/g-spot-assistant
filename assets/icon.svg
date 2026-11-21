@@ -1,10 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="G-Spot Assistant">
-  <defs>
-    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="86" y1="86" x2="426" y2="426">
-      <stop offset="0" stop-color="#ff8a3d"/>
-      <stop offset="1" stop-color="#e8433f"/>
-    </linearGradient>
-  </defs>
-  <path d="M376.2 135.8A170 170 0 1 0 426 256H256" fill="none" stroke="url(#g)" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="256" cy="256" r="58" fill="url(#g)"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+ <g fill="none" stroke="#EE6A3C" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"><path d="M362 120 A150 150 0 1 0 406 226 L320 226"/></g>
+ <g fill="#EE6A3C"><circle cx="262" cy="226" r="24"/></g>
+ <text x="256" y="478" text-anchor="middle" font-family="Inter, DejaVu Sans, sans-serif" font-weight="500" font-size="30" letter-spacing="2" fill="#EE6A3C" fill-opacity="0.75">by Roman</text>
 </svg>

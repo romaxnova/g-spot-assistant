@@ -48,6 +48,11 @@ export interface Config {
   storageWarning: string | undefined;
   /** Where this server's source code is published (linked from every page, as the AGPL asks of modified copies). */
   sourceUrl: string;
+  /**
+   * Hosts of the owner's other connectors (e.g. the WhatsApp connector) whose upload links send_to_link may
+   * push files to. Anything else is refused, so a message or a web page cannot get Claude to send files elsewhere.
+   */
+  peerUploadHosts: string[];
   /** Redirect URIs an OAuth client may use. Loopback entries match any port; an entry ending in "/*" any one last path segment. */
   allowedRedirectUris: string[];
   /** Hosts from which Client ID Metadata Documents may be fetched. */
@@ -94,6 +99,17 @@ function list(value: string): string[] {
     .split(/[,\s]+/)
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/** "wa.up.railway.app", "https://wa.up.railway.app/" and the like, as bare lower-case host names. */
+export function hostList(value: string): string[] {
+  return list(value).map((h) => {
+    try {
+      return new URL(/^[a-z]+:\/\//i.test(h) ? h : `https://${h}`).host.toLowerCase();
+    } catch {
+      throw new ConfigError(`PEER_UPLOAD_HOSTS: "${h.slice(0, 80)}" is not a host name`);
+    }
+  });
 }
 
 function bool(env: NodeJS.ProcessEnv, name: string, fallback: boolean): boolean {
@@ -215,6 +231,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbPath: optional(env, 'DB_PATH', `${dataDir.replace(/\/+$/, '')}/connector.sqlite`),
     storageWarning: storageWarning(env, dataDir),
     sourceUrl,
+    peerUploadHosts: hostList(optional(env, 'PEER_UPLOAD_HOSTS', '')),
     allowedRedirectUris: [...DEFAULT_REDIRECT_URIS, ...list(optional(env, 'EXTRA_REDIRECT_URIS', ''))],
     cimdAllowedHosts: list(optional(env, 'CIMD_ALLOWED_HOSTS', 'claude.ai').toLowerCase()),
     dcrEnabled: bool(env, 'DCR_ENABLED', true),
