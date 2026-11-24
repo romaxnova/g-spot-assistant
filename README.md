@@ -13,6 +13,7 @@ You run your own private copy. Nobody else can see your mail, and there is no su
 - "Who still hasn't answered me? Draft polite reminders."
 - "Save the contract from that email in my Drive, next to the others."
 - "Send this tomorrow at 9:00."
+- "Clean up my old promotions and unsubscribe me from the worst senders."
 
 It also keeps a list of what you are waiting for, can email you a summary of it every week, and makes Claude show you the draft first when you write to people you cannot afford to upset (a lawyer, an administration, your landlord).
 
