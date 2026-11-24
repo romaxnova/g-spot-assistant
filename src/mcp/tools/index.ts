@@ -17,6 +17,7 @@ import { driveTools } from './drive.js';
 import { crossTools } from './cross.js';
 import { uploadTools } from './uploads.js';
 import { sendToLink } from './send-to-link.js';
+import { cleanupTools } from './gmail-cleanup.js';
 
 export const allTools: ToolDefinition[] = [
   ...gmailTools,
@@ -25,6 +26,7 @@ export const allTools: ToolDefinition[] = [
   gmailCreateDrafts,
   gmailAwaitingReply,
   gmailFindContacts,
+  ...cleanupTools,
   sensitiveContactsTool,
   ...calendarTools,
   ...sheetsTools,
