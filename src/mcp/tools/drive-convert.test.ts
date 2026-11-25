@@ -4,7 +4,8 @@ import { createLogger } from '../../log.js';
 import { apiCalls, createTestContext, resultJson, resultText, type RecordedCall, type TestContext } from '../../test-support.js';
 import type { ToolDefinition } from '../registry.js';
 import { runTool } from '../server.js';
-import { createdFileLookup, driveTools } from './drive.js';
+import { createdFileLookup, driveTools, OcrPending, ocrText } from './drive.js';
+import { OcrCache } from '../../ocr-cache.js';
 import { driveDocPdf, pdfName } from './drive-pdf.js';
 import { gmailTools } from './gmail.js';
 import { GOOGLE_MIME } from './drive-files.js';
@@ -57,14 +58,15 @@ test('a conversion that times out and is not found says not to create it again',
 });
 
 /** A fake Drive for OCR: the scan, a copy that becomes `tmp`, its export, its deletion, and the tagged Docs listed. */
-function ocrDrive(opts: { tagged?: unknown[]; copy?: 'ok' | 'timeout'; del?: 'ok' | 'forbidden' } = {}) {
+function ocrDrive(opts: { tagged?: unknown[]; copy?: 'ok' | 'timeout' | 'slow'; del?: 'ok' | 'forbidden' } = {}) {
   return createTestContext({
     google: (c) => {
       if (c.method === 'GET' && c.url.pathname === `/drive/v3/files/${PDF_ID}`) return { json: scan };
       if (c.method === 'GET' && c.url.pathname === '/drive/v3/files') return { json: { files: c.url.searchParams.get('q')!.includes('connectorOcr') ? (opts.tagged ?? []) : [] } };
       if (c.method === 'POST' && c.url.pathname === `/drive/v3/files/${PDF_ID}/copy`) {
         if (opts.copy === 'timeout') throw timeout();
-        return { json: { id: 'tmp', name: (c.json as { name: string }).name, mimeType: GOOGLE_MIME.document } };
+        const made = { json: { id: 'tmp', name: (c.json as { name: string }).name, mimeType: GOOGLE_MIME.document } };
+        return opts.copy === 'slow' ? new Promise((resolve) => setTimeout(() => resolve(made), 80)) : made;
       }
       if (c.method === 'GET' && /\/drive\/v3\/files\/(tmp|earlier)\/export$/.test(c.url.pathname)) return { text: '# Procès-verbal\n\nRésolution 1 : adoptée' };
       if (c.method === 'DELETE') return opts.del === 'forbidden' ? { status: 403, json: { error: { code: 403, message: 'Forbidden', errors: [{ reason: 'forbidden' }] } } } : new Response(null, { status: 204 });
@@ -194,4 +196,26 @@ test('an account named by its address works like its alias, and the address is n
   assert.match(resultText(unknown), /Unknown account alias "someone@else\.com"\. Linked aliases: me/);
   assert.ok(lines.some((l) => l.includes('"alias":"me"')));
   for (const l of lines) assert.doesNotMatch(l, /@/);
+});
+
+test('drive_get_file ocr: the text is remembered, so reading on runs no new OCR', async () => {
+  const ctx = ocrDrive();
+  ctx.ocrCache = new OcrCache(ctx.db, [ctx.config.encryptionKey]);
+  const first = resultJson<{ content: string; ocr_status?: string }>(await call(byName('drive_get_file'), ctx, { file_id: PDF_ID, ocr: true, max_chars: 200 }));
+  assert.equal(first.ocr_status, undefined);
+  const next = resultJson<{ content: string; ocr_status?: string }>(await call(byName('drive_get_file'), ctx, { file_id: PDF_ID, ocr: true, max_chars: 200, offset: 5 }));
+  assert.equal(next.ocr_status, 'from_cache');
+  assert.match(next.content, /Résolution 1/);
+  assert.equal(apiCalls(ctx).filter((c) => c.url.pathname.endsWith('/copy')).length, 1, 'one OCR for both reads');
+});
+
+test('ocr: a slow read answers "still running", carries on in the background, and the next call gets its text', async () => {
+  const ctx = ocrDrive({ copy: 'slow' });
+  ctx.ocrCache = new OcrCache(ctx.db, [ctx.config.encryptionKey]);
+  await assert.rejects(ocrText(ctx, 'me', { fileId: PDF_ID, name: 'PV AG.pdf', version: 'v1' }, { waitMs: 5 }), (e: unknown) => e instanceof OcrPending && /still reading/.test((e as Error).message));
+  const done = await ocrText(ctx, 'me', { fileId: PDF_ID, name: 'PV AG.pdf', version: 'v1' }, { waitMs: 2_000 });
+  assert.match(done.text, /Procès-verbal/);
+  assert.equal(apiCalls(ctx).filter((c) => c.url.pathname.endsWith('/copy')).length, 1, 'the second call waited on the first read');
+  assert.equal((await ocrText(ctx, 'me', { fileId: PDF_ID, version: 'v1' })).cached, true);
+  await assert.rejects(ocrText(ctx, 'me', { fileId: PDF_ID, version: 'v2' }, { waitMs: 5 }), OcrPending, 'an edited file is read again');
 });

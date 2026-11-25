@@ -3,6 +3,7 @@
  * protected, stateless; serves the 2026-07-28 protocol and the 2025 revisions)
  * and the browser pages.
  */
+import type { OcrCache } from './ocr-cache.js';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { createOAuthMetadata, getOAuthProtectedResourceMetadataUrl, mcpAuthMetadataRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
@@ -49,6 +50,7 @@ export interface AppDeps {
   followups?: FollowupStore;
   sensitive?: SensitiveContactsStore;
   schedules?: ScheduledSendStore;
+  ocrCache?: OcrCache;
   /** The daily follow-up digest (settings on the admin page); settings in a throwaway in-memory database when not given (tests). */
   digest?: DigestScheduler;
 }
@@ -83,7 +85,7 @@ export function createApp(d: AppDeps): Express {
   // ---- MCP endpoint ----
   const uploads = d.uploads ?? new UploadStore();
   const followups = d.followups ?? new FollowupStore(openDatabase(':memory:'), [config.encryptionKey]);
-  const ctx: ToolContext = { config, accounts: d.accounts, google: d.googleClient, log, uploads, followups, sensitive: d.sensitive, schedules: d.schedules };
+  const ctx: ToolContext = { config, accounts: d.accounts, google: d.googleClient, log, uploads, followups, sensitive: d.sensitive, schedules: d.schedules, ...(d.ocrCache ? { ocrCache: d.ocrCache } : {}) };
   const digest = d.digest ?? new DigestScheduler(new DigestSettingsStore(openDatabase(':memory:'), config.defaultTimezone), () => ctx, log);
   ctx.digest = digest;
   const mcp = express.Router();

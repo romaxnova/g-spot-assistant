@@ -1,6 +1,7 @@
 /**
  * Entry point: wires configuration, storage, Google and the HTTP app together.
  */
+import { OcrCache } from './ocr-cache.js';
 import { loadConfig, ConfigError } from './config.js';
 import { createLogger } from './log.js';
 import { checkpoint, cleanupExpired, compact, fileSizes, openDatabase } from './db.js';
@@ -71,10 +72,11 @@ function main(): void {
   const sensitive = new SensitiveContactsStore(db, [config.encryptionKey, config.encryptionKeyPrevious]);
   if (sensitive.unreadable) log.warn('no configured key opens the list of sensitive contacts: it is kept, unseen, until TOKEN_ENCRYPTION_KEY or TOKEN_ENCRYPTION_KEY_PREVIOUS opens it again');
   const schedules = new ScheduledSendStore(db);
-  const toolCtx: ToolContext = { config, accounts, google: googleClient, log, uploads, followups, sensitive, schedules };
+  const ocrCache = new OcrCache(db, [config.encryptionKey, config.encryptionKeyPrevious]);
+  const toolCtx: ToolContext = { config, accounts, google: googleClient, log, uploads, followups, sensitive, schedules, ocrCache };
   const digest = new DigestScheduler(new DigestSettingsStore(db, config.defaultTimezone), () => toolCtx, log);
   toolCtx.digest = digest;
-  const app = createApp({ config, log, accounts, store, clients, provider, googleAuth, googleClient, tools: allTools, uploads, followups, sensitive, schedules, digest });
+  const app = createApp({ config, log, accounts, store, clients, provider, googleAuth, googleClient, tools: allTools, uploads, followups, sensitive, schedules, ocrCache, digest });
   // Express 5 calls this callback on failure too (e.g. port already in use), passing the error.
   const server = app.listen(config.port, '0.0.0.0', (err?: Error) => {
     if (err) {
