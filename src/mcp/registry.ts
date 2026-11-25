@@ -2,6 +2,7 @@
  * Tool definition contract shared by every service module, plus output helpers
  * that keep results compact for claude.ai's limited context.
  */
+import type { OcrCache } from '../ocr-cache.js';
 import * as z from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/server';
 import type { Config, Service } from '../config.js';
@@ -29,6 +30,8 @@ export interface ToolContext {
   sensitive?: SensitiveContactsStore;
   /** Drafts scheduled to be sent later by the connector (gmail_schedule_send). */
   schedules?: ScheduledSendStore;
+  /** Text already read from scans by OCR, so reading on does not run OCR again. */
+  ocrCache?: OcrCache;
 }
 
 export interface ToolAnnotations {

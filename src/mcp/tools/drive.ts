@@ -208,6 +208,8 @@ interface ContentResult {
   total_chars?: number;
   next_offset?: number;
   content_note?: string;
+  /** OCR reads: "in_progress" (call again shortly) or "from_cache" (read before, no new OCR). */
+  ocr_status?: 'in_progress' | 'from_cache';
   /** Returned to Claude as an image content block, not as JSON. */
   image?: { data: Buffer; mimeType: string };
 }
@@ -604,16 +606,72 @@ const OCR_TAG = 'connectorOcr';
  * When Google takes longer than a tool call may, the Doc it finishes later is tagged with its source: the next call
  * for the same file reads that one instead of converting again.
  */
+/** How long a call waits for OCR before answering that it is still running (it then goes on in the background). */
+export const OCR_WAIT_MS = 30_000;
+
+/** OCR still running when the call stopped waiting: the next call with the same arguments gets the text. */
+export class OcrPending extends Error {
+  constructor(readonly startedAt: number) {
+    super(
+      `Google is still reading this scan (started ${Math.max(1, Math.round((Date.now() - startedAt) / 1000))} s ago; long scans take a minute or two). ` +
+        'Tell the user, then call again with the same arguments in about a minute: the text will be ready, and nothing is read twice.',
+    );
+    this.name = 'OcrPending';
+  }
+}
+
+/** OCR reads in progress on this server, by source: a second call waits on the first instead of starting another. */
+const inflight = new Map<string, { promise: Promise<{ text: string; note?: string }>; startedAt: number }>();
+
+/**
+ * The text of a scan by Google's OCR, read once: from the cache when it was read before (a Drive file at the same
+ * version, or the same bytes), else read now. When Google takes longer than waitMs, the read goes on in the
+ * background and OcrPending is thrown; the next call gets the result.
+ */
 export async function ocrText(
   ctx: ToolContext,
   account: string,
-  from: { fileId: string; name?: string } | { data: Buffer; mimeType: string; name?: string },
-): Promise<{ text: string; note?: string }> {
-  const deadline = Date.now() + OCR_BUDGET_MS;
+  from: { fileId: string; name?: string; version?: string } | { data: Buffer; mimeType: string; name?: string },
+  opts: { waitMs?: number } = {},
+): Promise<{ text: string; note?: string; cached?: boolean }> {
   const source = createHash('sha256')
     .update('fileId' in from ? `drive:${from.fileId}` : from.data)
     .digest('base64url')
     .slice(0, 32);
+  const key = `${account.toLowerCase()}:${source}:${'fileId' in from ? (from.version ?? '') : ''}`;
+  const cached = ctx.ocrCache?.get(key);
+  if (cached !== undefined) return { text: cached, cached: true };
+  let run = inflight.get(key);
+  if (!run) {
+    const promise = readByOcr(ctx, account, from, source).then((r) => {
+      ctx.ocrCache?.put(key, r.text);
+      return r;
+    });
+    run = { promise, startedAt: Date.now() };
+    inflight.set(key, run);
+    promise.then(
+      () => inflight.delete(key),
+      (err: unknown) => {
+        inflight.delete(key);
+        ctx.log.info('drive ocr failed', { alias: account, error: err instanceof Error ? err.message.slice(0, 200) : String(err) });
+      },
+    );
+  }
+  const waitMs = opts.waitMs ?? OCR_WAIT_MS;
+  let timer: NodeJS.Timeout | undefined;
+  const pending = Symbol('pending');
+  const outcome = await Promise.race([run.promise, new Promise<typeof pending>((resolve) => (timer = setTimeout(() => resolve(pending), waitMs)))]).finally(() => clearTimeout(timer));
+  if (outcome === pending) throw new OcrPending(run.startedAt);
+  return outcome;
+}
+
+async function readByOcr(
+  ctx: ToolContext,
+  account: string,
+  from: { fileId: string; name?: string } | { data: Buffer; mimeType: string; name?: string },
+  source: string,
+): Promise<{ text: string; note?: string }> {
+  const deadline = Date.now() + OCR_BUDGET_MS;
   const name = `_ocr ${withoutExtension(from.name ?? 'scan')}`.slice(0, 200);
   let doc = (await filesTagged(ctx, account, OCR_TAG, source))[0];
   if (!doc) {
@@ -851,7 +909,7 @@ const driveGetFile = defineTool({
     'Returns a file\'s metadata (id, name, type, size, times, parents, owner, sharing state, permissions [{id, type, role, email}], web_view_link) and, by default, its content: Google Docs are exported as markdown (plain text if Google refuses markdown), Google Sheets as CSV of the first tab only (use sheets_read for more), Google Slides as plain text; ' +
     'text files (text/*, JSON, XML, CSV, markdown) are read as-is; PDFs (text layer), Word (.docx), Excel (.xlsx, each sheet as CSV) and PowerPoint (.pptx) files are converted to text (extracted_from says from what); ' +
     'PNG/JPEG/GIF/WebP images and Google Drawings come back as an image you can look at, and other images, large images and scanned PDFs as Drive\'s preview image when there is one. Other binary files return content_note instead. ' +
-    'ocr: true reads a scanned PDF or a photo of a document as text with Google\'s OCR, in one step (a temporary Google Doc is made and deleted right after; long scans take a minute or more). ' +
+    'ocr: true reads a scanned PDF or a photo of a document as text with Google\'s OCR (a temporary Google Doc is made and deleted right after). The text is remembered: reading on with offset, or reading the file again, costs no new OCR. A long scan can take a minute or two: then ocr_status is "in_progress" and the same call a minute later returns the text. ' +
     'Long content is clipped to max_chars with truncated/total_chars/next_offset; call again with offset to continue. Read-only.',
   service: SERVICE,
   inputSchema: {
@@ -881,9 +939,16 @@ const driveGetFile = defineTool({
         const mime = file.mimeType ?? '';
         if (!ocrType(mime)) return errorResult(`ocr only applies to PDFs and images; this file is ${friendlyType(mime)} (${mime}). Call without ocr.`);
         read = async () => {
-          const { text, note } = await ocrText(ctx, args.account, { fileId: id, name: file.name });
+          let got;
+          try {
+            got = await ocrText(ctx, args.account, { fileId: id, name: file.name, version: file.modifiedTime });
+          } catch (err) {
+            if (err instanceof OcrPending) return { extracted_from: 'ocr', ocr_status: 'in_progress', content_note: err.message };
+            throw err;
+          }
+          const { text, note, cached } = got;
           const out = clippedText(text, 'text/markdown', maxChars, offset, note);
-          return { ...out, extracted_from: 'ocr', content_note: text.trim() ? out.content_note : 'Google\'s OCR found no text in the file.' };
+          return { ...out, extracted_from: 'ocr', ...(cached ? { ocr_status: 'from_cache' } : {}), content_note: text.trim() ? out.content_note : 'Google\'s OCR found no text in the file.' };
         };
       }
       const { image, ...content }: ContentResult = args.include_content === false ? {} : await read();

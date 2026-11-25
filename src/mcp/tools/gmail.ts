@@ -46,7 +46,7 @@ import {
 import { cleanText, normalizeNewlines, oneLine, stripTrackingParams } from '../text.js';
 import { readFileContent } from '../extract/readable.js';
 import { convertibleKind } from './drive-files.js';
-import { ocrText, ocrType } from './drive.js';
+import { OcrPending, ocrText, ocrType } from './drive.js';
 import { baseMime, mimeFromFilename, sniffMime } from '../file-types.js';
 import { attachmentsParam, expandUploadLinks, mb, resolveFile, transferTimeoutMs, type FileSpec } from './file-sources.js';
 import { allowPlaceholdersParam, findPlaceholders, placeholderRefusal, placeholderWarning, quoteList } from './placeholders.js';
@@ -667,9 +667,16 @@ const gmailGetAttachment = defineTool({
     if (args.ocr) {
       const type = baseMime(meta.mimeType ?? '') === 'application/octet-stream' || !meta.mimeType ? (mimeFromFilename(meta.filename) ?? sniffMime(bytes) ?? '') : baseMime(meta.mimeType);
       if (!ocrType(type)) return errorResult(`ocr only applies to PDFs and images; this attachment is ${type || 'of an unknown type'}. Call without ocr.`);
-      const { text, note } = await ocrText(ctx, args.account, { data: bytes, mimeType: type, name: meta.filename });
+      let got;
+      try {
+        got = await ocrText(ctx, args.account, { data: bytes, mimeType: type, name: meta.filename });
+      } catch (err) {
+        if (err instanceof OcrPending) return jsonResult({ ...base, extracted_from: 'ocr', ocr_status: 'in_progress', note: err.message });
+        throw err;
+      }
+      const { text, note, cached } = got;
       const clipped = clip(text, args.max_chars ?? 20_000, args.offset ?? 0);
-      return jsonResult({ ...base, extracted_from: 'ocr', format: 'text/markdown', text: clipped.text, ...clipFields(clipped), note: text.trim() ? note : "Google's OCR found no text in the attachment." });
+      return jsonResult({ ...base, extracted_from: 'ocr', ...(cached ? { ocr_status: 'from_cache' } : {}), format: 'text/markdown', text: clipped.text, ...clipFields(clipped), note: text.trim() ? note : "Google's OCR found no text in the attachment." });
     }
     const content = await readFileContent(bytes, { mimeType: meta.mimeType, filename: meta.filename, charset });
     if (content.kind === 'image') {
