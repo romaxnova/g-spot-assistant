@@ -8,13 +8,23 @@ export const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 export const GOOGLE_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 
+import { createHash, randomBytes } from 'node:crypto';
+
 export type FetchLike = typeof fetch;
 
 export interface GoogleOAuthConfig {
   clientId: string;
   clientSecret: string;
-  /** Where Google sends the user back: `${BASE_URL}/auth/google/callback`. */
+  /** Where Google sends the user back: `${BASE_URL}/auth/google/callback`, or the relay of the server that shared its key. */
   redirectUri: string;
+  /** Put before every state: tells that relay which server the sign-in belongs to ("<id>."). */
+  statePrefix?: string;
+}
+
+/** PKCE (S256): the code Google returns is useless without the verifier this server kept. */
+export function pkcePair(): { verifier: string; challenge: string } {
+  const verifier = randomBytes(48).toString('base64url');
+  return { verifier, challenge: createHash('sha256').update(verifier).digest('base64url') };
 }
 
 export interface AuthUrlOptions {
@@ -25,6 +35,8 @@ export interface AuthUrlOptions {
   loginHint?: string;
   /** Google's incremental authorization: keep previously granted scopes. */
   includeGrantedScopes?: boolean;
+  /** PKCE challenge (S256), from pkcePair(). */
+  codeChallenge?: string;
 }
 
 export interface TokenResponse {
@@ -73,7 +85,11 @@ export class GoogleAuth {
     u.searchParams.set('redirect_uri', this.cfg.redirectUri);
     u.searchParams.set('response_type', 'code');
     u.searchParams.set('scope', opts.scopes.join(' '));
-    u.searchParams.set('state', opts.state);
+    u.searchParams.set('state', `${this.cfg.statePrefix ?? ''}${opts.state}`);
+    if (opts.codeChallenge) {
+      u.searchParams.set('code_challenge', opts.codeChallenge);
+      u.searchParams.set('code_challenge_method', 'S256');
+    }
     if (opts.offline) {
       u.searchParams.set('access_type', 'offline');
       u.searchParams.set('prompt', 'consent');
@@ -85,13 +101,14 @@ export class GoogleAuth {
     return u.href;
   }
 
-  async exchangeCode(code: string): Promise<TokenResponse> {
+  async exchangeCode(code: string, codeVerifier?: string): Promise<TokenResponse> {
     return this.tokenRequest({
       grant_type: 'authorization_code',
       code,
       client_id: this.cfg.clientId,
       client_secret: this.cfg.clientSecret,
       redirect_uri: this.cfg.redirectUri,
+      ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
     });
   }
 

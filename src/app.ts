@@ -33,6 +33,8 @@ import { openDatabase } from './db.js';
 import { createWebRouter } from './web/routes.js';
 import { setSourceLink } from './web/html.js';
 import { uploadRouter } from './web/upload.js';
+import { hubRouter, type KeyShareHub } from './keyshare/hub.js';
+import { memberRouter, type KeyShareMember } from './keyshare/member.js';
 
 export interface AppDeps {
   config: Config;
@@ -53,6 +55,10 @@ export interface AppDeps {
   ocrCache?: OcrCache;
   /** The daily follow-up digest (settings on the admin page); settings in a throwaway in-memory database when not given (tests). */
   digest?: DigestScheduler;
+  /** Sharing this server's Google key with friends' servers (SHARE_GOOGLE_KEY). */
+  keyHub?: KeyShareHub;
+  /** Asking for a friend's shared Google key (SHARED_KEY_SERVER). */
+  keyMember?: KeyShareMember;
 }
 
 export function createApp(d: AppDeps): Express {
@@ -134,6 +140,10 @@ export function createApp(d: AppDeps): Express {
 
   // ---- One-time upload links for files from Claude's code sandbox (capability URLs, no cookie or bearer) ----
   app.use('/upload', uploadRouter(uploads, log));
+
+  // ---- Shared Google key: friends' servers ask for it and their sign-ins come back through here; or this server asks ----
+  if (d.keyHub) app.use(hubRouter(d.keyHub, log));
+  if (d.keyMember) app.use(memberRouter(d.keyMember));
 
   // ---- Browser pages ----
   app.use(createWebRouter({ ...d, digest }));
@@ -270,7 +280,7 @@ export function loggablePath(originalUrl: string): string {
   }
   path = segments.join('/') || '/';
   if (!path.startsWith('/')) path = `/${path}`;
-  return path.replace(/^\/+link\/+[^/]+/i, '/link/:token').replace(/^\/+upload\/+[^/]+/i, '/upload/:token').slice(0, 200);
+  return path.replace(/^\/+key-share\/+proof\/+[^/]+/i, '/key-share/proof/:id').replace(/^\/+link\/+[^/]+/i, '/link/:token').replace(/^\/+upload\/+[^/]+/i, '/upload/:token').slice(0, 200);
 }
 
 function requestLogger(log: Logger) {

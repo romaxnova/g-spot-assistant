@@ -38,6 +38,14 @@ export interface Config {
   google: { clientId: string; clientSecret: string };
   /** False until GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set; the server still starts so the URL can be checked. */
   googleConfigured: boolean;
+  /** True while the Google key in use came from SHARED_KEY_SERVER rather than from the variables. */
+  googleFromKeyServer: boolean;
+  /** SHARE_GOOGLE_KEY: friends' servers may ask for this server's Google key (approved one by one on the admin page). */
+  shareGoogleKey: boolean;
+  /** SHARED_KEY_SERVER: the server a friend's Google key can be asked from, instead of copying it by hand. */
+  sharedKeyServer: URL | undefined;
+  /** SHARED_KEY_OWNER: who runs that server, as shown on the setup page. */
+  sharedKeyOwner: string;
   /** Lower-cased emails allowed to sign in to this server (the Claude→server layer). */
   ownerEmails: string[];
   encryptionKey: Buffer;
@@ -172,6 +180,20 @@ function storageWarning(env: NodeJS.ProcessEnv, dataDir: string): string | undef
   return undefined;
 }
 
+/** SHARED_KEY_SERVER: an https origin (not this server). */
+function keyServer(env: NodeJS.ProcessEnv, self: URL): URL | undefined {
+  const raw = env['SHARED_KEY_SERVER']?.trim().replace(/\/+$/, '');
+  if (!raw) return undefined;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new ConfigError('SHARED_KEY_SERVER must be the https address of the server that shares its Google key');
+  }
+  if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash) throw new ConfigError('SHARED_KEY_SERVER must be an https origin, such as https://name.up.railway.app');
+  return url.origin === self.origin ? undefined : url;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const baseUrlRaw = publicOrigin(env).replace(/\/+$/, '');
   let baseUrl: URL;
@@ -223,6 +245,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       clientSecret: optional(env, "GOOGLE_CLIENT_SECRET", ""),
     },
     googleConfigured: Boolean(env["GOOGLE_CLIENT_ID"]?.trim() && env["GOOGLE_CLIENT_SECRET"]?.trim()),
+    googleFromKeyServer: false,
+    shareGoogleKey: bool(env, 'SHARE_GOOGLE_KEY', false),
+    sharedKeyServer: keyServer(env, baseUrl),
+    sharedKeyOwner: optional(env, 'SHARED_KEY_OWNER', 'the key owner').slice(0, 40),
     ownerEmails,
     encryptionKey,
     encryptionKeyPrevious,
