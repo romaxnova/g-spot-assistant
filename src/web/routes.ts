@@ -12,7 +12,9 @@ import { INVITE_TTL, type AuthStore } from '../auth/store.js';
 import type { ConnectorOAuthProvider } from '../auth/provider.js';
 import type { ClientRegistry } from '../auth/clients.js';
 import { attachSession, clearSessionCookie, requireSameOrigin, setSessionCookie } from '../auth/session.js';
-import { decodeIdToken, type GoogleAuth } from '../google/oauth.js';
+import { decodeIdToken, pkcePair, type GoogleAuth } from '../google/oauth.js';
+import type { KeyShareHub } from '../keyshare/hub.js';
+import type { KeyShareMember, MemberView } from '../keyshare/member.js';
 import type { GoogleClient } from '../google/client.js';
 import { DIGEST_LANGS, digestInbox, DigestSettingsError, WEEKDAYS, type DigestScheduler, type DigestSettings } from '../followups/digest.js';
 import type { Logger } from '../log.js';
@@ -21,6 +23,8 @@ import { esc, fmtTime, page } from './html.js';
 import { memoryReport } from '../memory.js';
 
 export interface WebDeps {
+  keyHub?: KeyShareHub;
+  keyMember?: KeyShareMember;
   config: Config;
   accounts: AccountStore;
   store: AuthStore;
@@ -98,15 +102,16 @@ export function redirectUri(config: Config): string {
 
 /** For a server set up with a Google key someone shared: what to send them so that sign-in works. */
 export function sharedKeyNote(config: Config): string {
+  if (config.googleFromKeyServer) return `<p class="muted">Google sign-in uses the key ${esc(config.sharedKeyOwner)} shares from ${esc(config.sharedKeyServer?.hostname ?? '')}.</p>`;
   return `<p class="muted">Using a Google key that someone shared with you? Send them this server's two addresses, to add to their Google Cloud client: redirect URI ${pick(redirectUri(config))} and authorized domain ${pick(config.baseUrl.hostname)}.</p>`;
 }
 
 /** What is left to do on a fresh install, with this server's own addresses filled in. */
-export function setupSteps(config: Config): string {
+export function setupSteps(config: Config, asked?: MemberView): string {
   const origin = config.baseUrl.origin;
   const guide = config.sourceUrl.startsWith('https://github.com/') ? `${config.sourceUrl}/blob/main/docs/SETUP.md` : config.sourceUrl;
   return `<div class="alert warn">Almost there: Google sign-in is not set up yet.</div>
-<div class="card"><h2>Someone gave you a shared Google key?</h2>
+${asked ? keyRequestCard(asked) : ''}<div class="card"><h2>${asked ? 'Or: someone sent you the two values of a Google key?' : 'Someone gave you a shared Google key?'}</h2>
 <p>Put the two values in this server's <strong>Variables</strong> as <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> (on Railway: the service, then Variables, then deploy), and send the person who gave them this redirect URI ${pick(redirectUri(config))} and authorized domain ${pick(config.baseUrl.hostname)}. Then skip to the last two steps below.</p></div>
 <div class="card"><h2>Finish the setup with your own Google key</h2><p class="muted">About 10 minutes, free. Each link opens the right Google Cloud page; tap a grey value once to select it, then copy.</p><ol>
 <li><a href="${GCP.project}">Create a project</a> (any name), and make sure it is the one selected in the top bar.</li>
@@ -119,6 +124,22 @@ export function setupSteps(config: Config): string {
 <li>Come back here, open the admin page and sign in with the owner's Google account (the one in <code>OWNER_EMAILS</code>), then link your Google accounts.</li>
 <li>In Claude (Settings → Connectors → Add custom connector), paste ${pick(config.mcpUrl.href)}.</li>
 </ol><p class="muted">Every step in detail: the <a href="${esc(guide)}">setup guide</a>.</p></div>`;
+}
+
+/** Asking the key owner's server for its Google key: the button, then the code to send them. */
+export function keyRequestCard(v: MemberView): string {
+  const owner = esc(v.owner);
+  const ask = (label: string) => `<form method="post" action="/setup/key-request"><label>Your name, so ${owner} knows who is asking<br><input type="text" name="name" required maxlength="60" value="${esc(v.name ?? '')}"></label><p><button class="primary" type="submit">${label}</button></p></form>`;
+  if (v.status === 'pending') {
+    return `<div class="card"><h2>Waiting for ${owner}</h2><p>Send ${owner} this code, so they know the request is yours:</p><p><strong style="font-size:1.6em;letter-spacing:.08em">${esc(v.checkCode ?? '')}</strong></p>
+<p class="muted">Once ${owner} approves it, this server starts using the key by itself within a minute: reload this page then. Nothing else to copy or paste.</p>
+<details><summary class="muted">Ask again</summary>${ask('Send a new request')}</details></div>`;
+  }
+  const why =
+    v.status === 'declined' ? `<div class="alert warn">${owner} declined the request. Check with them, then ask again.</div>`
+    : v.status === 'removed' ? `<div class="alert warn">${owner} no longer shares the key with this server. Check with them, then ask again.</div>`
+    : v.status === 'error' && v.error ? `<div class="alert error">${esc(v.error)}</div>` : '';
+  return `<div class="card"><h2>Use ${owner}'s Google key (2 minutes)</h2>${why}<p>The quickest way: ${owner} shares their Google key with your server. Press the button, then send ${owner} the code that appears. No Google Cloud, nothing to copy.</p>${ask(`Ask ${owner} for the key`)}</div>`;
 }
 
 export function termsOfService(config: Config): string {
@@ -166,7 +187,7 @@ export function createWebRouter(d: WebDeps): Router {
     res.send(
       page({
         title: d.config.serverName,
-        body: `${storageBanner()}${d.config.googleConfigured ? sharedKeyNote(d.config) : setupSteps(d.config)}<p class="muted">Private remote MCP server. MCP endpoint: <code>${esc(d.config.mcpUrl.href)}</code></p><p><a class="btn" href="/admin">Open admin</a></p><p class="muted"><a href="/privacy">Privacy policy</a> · <a href="/terms">Terms of service</a></p>`,
+        body: `${storageBanner()}${d.config.googleConfigured ? sharedKeyNote(d.config) : setupSteps(d.config, d.keyMember?.view())}<p class="muted">Private remote MCP server. MCP endpoint: <code>${esc(d.config.mcpUrl.href)}</code></p><p><a class="btn" href="/admin">Open admin</a></p><p class="muted"><a href="/privacy">Privacy policy</a> · <a href="/terms">Terms of service</a></p>`,
         signedInAs: req.session?.email,
       }),
     );
@@ -195,8 +216,9 @@ export function createWebRouter(d: WebDeps): Router {
 
   r.post('/admin/login/start', limiter, requireGoogle, form, (req, res) => {
     const next = safeNext(req.body?.next);
-    const state = d.store.createGoogleState('login', { next });
-    res.redirect(302, d.googleAuth.buildAuthUrl({ scopes: [...IDENTITY_SCOPES], state, offline: false }));
+    const pkce = pkcePair();
+    const state = d.store.createGoogleState('login', { next, pkce: pkce.verifier });
+    res.redirect(302, d.googleAuth.buildAuthUrl({ scopes: [...IDENTITY_SCOPES], state, offline: false, codeChallenge: pkce.challenge }));
   });
 
   r.post('/admin/logout', (req, res) => {
@@ -207,7 +229,8 @@ export function createWebRouter(d: WebDeps): Router {
 
   // ---- Google callback: finishes both the owner sign-in and the account-link flows ----
   r.get('/auth/google/callback', limiter, async (req, res) => {
-    const stateParam = str(req.query['state']);
+    // A sign-in that came through the key owner's relay carries that server's prefix ("<id>.<state>").
+    const stateParam = str(req.query['state']).split('.').pop() ?? '';
     const st = stateParam ? d.store.consumeGoogleState(stateParam) : undefined;
     if (!st) {
       d.log.warn('google callback refused', { reason: 'unknown_or_expired_state' });
@@ -221,7 +244,7 @@ export function createWebRouter(d: WebDeps): Router {
     }
     let tokens;
     try {
-      tokens = await d.googleAuth.exchangeCode(code);
+      tokens = await d.googleAuth.exchangeCode(code, str(st.payload['pkce']) || undefined);
     } catch (err) {
       d.log.warn('google code exchange failed', { error: errorSummary(err) });
       return fail(res, 502, 'Could not complete the exchange with Google. Check GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and the redirect URI, then try again.', req.session?.email);
@@ -356,6 +379,7 @@ ${digestCard()}
 <h2>Claude connections</h2>
 <div class="card">${families.length ? familyCards : '<p class="muted">No Claude client is connected yet. Add this server as a custom connector in claude.ai.</p>'}
 <form method="post" action="/admin/revoke-claude"><p><button class="danger" type="submit">Disconnect all Claude sessions</button> <span class="muted">Claude will have to sign in again. Use this if a device is lost.</span></p></form></div>
+${d.keyHub ? `<h2>Shared Google key</h2>${keyHubCard(d.keyHub)}` : ''}
 <h2>Server</h2>
 ${serverCard()}`,
       }),
@@ -472,8 +496,10 @@ ${gmail.length ? `<p>Accounts to read (none ticked: all of them):</p>${checkboxe
   });
 
   function startGoogleLink(linkToken: string, services: Service[], loginHint: string | null): string {
-    const state = d.store.createGoogleState('link', { linkToken });
+    const pkce = pkcePair();
+    const state = d.store.createGoogleState('link', { linkToken, pkce: pkce.verifier });
     return d.googleAuth.buildAuthUrl({
+      codeChallenge: pkce.challenge,
       scopes: [...IDENTITY_SCOPES, ...scopesForServices(services)],
       state,
       offline: true,
@@ -574,6 +600,41 @@ ${loopback ? '<div class="alert warn">The redirect goes to a program on this com
     if (!url) return fail(res, 400, 'This authorization request has expired. Go back to Claude and connect again.', req.session!.email);
     res.redirect(302, url);
   });
+
+  // ---- A friend asks for the shared Google key (before Google sign-in exists here, so no owner session yet) ----
+  r.post('/setup/key-request', limiter, form, async (req, res) => {
+    // Only while this server has no key: once it has one, nobody visiting the page can reset the approval.
+    if (!d.keyMember || d.config.googleConfigured) return res.redirect(302, '/');
+    await d.keyMember.ask(str(req.body?.name));
+    res.redirect(302, '/');
+  });
+
+  // ---- The key owner approves, declines or removes friends' servers ----
+  r.post('/admin/key-share', requireOwner, form, (req, res) => {
+    const action = str(req.body?.action);
+    if (!d.keyHub || !['approve', 'decline', 'remove'].includes(action)) return fail(res, 400, 'Unknown action.', req.session!.email);
+    const s = d.keyHub.decide(str(req.body?.sid), action as 'approve' | 'decline' | 'remove');
+    if (!s) return fail(res, 404, 'That request is gone or was already decided.', req.session!.email);
+    const msg = action === 'approve' ? `${s.name} (${new URL(s.origin).hostname}) can now use your Google key: their server picks it up within a minute.` : action === 'decline' ? `Declined ${s.name}'s request.` : `${s.name}'s server no longer gets your key or new sign-ins.`;
+    res.redirect(302, '/admin?msg=' + encodeURIComponent(msg));
+  });
+
+  function keyHubCard(hub: KeyShareHub): string {
+    const shares = hub.list();
+    const when = (ms: number | null) => fmtTime(ms ? Math.floor(ms / 1000) : null);
+    const act = (sid: string, action: string, label: string, cls = '') =>
+      `<form class="inline" method="post" action="/admin/key-share"><input type="hidden" name="sid" value="${esc(sid)}"><input type="hidden" name="action" value="${action}"><button${cls ? ` class="${cls}"` : ''} type="submit">${label}</button></form>`;
+    const items = shares
+      .map((s) =>
+        s.status === 'pending'
+          ? `<div class="item"><div class="item-head"><strong>${esc(s.name)}</strong> <span class="badge warn">asks</span></div><div class="muted">${esc(s.origin)} · asked ${when(s.createdAt)}</div><div>Code: <strong>${esc(s.checkCode)}</strong> <span class="muted">(approve only if ${esc(s.name)} sent you this same code)</span></div>${act(s.sid, 'approve', 'Approve', 'primary')} ${act(s.sid, 'decline', 'Decline')}</div>`
+          : `<div class="item"><div class="item-head"><strong>${esc(s.name)}</strong> <span class="badge">uses your key</span></div><div class="muted">${esc(s.origin)} · since ${when(s.decidedAt)} · last check ${when(s.lastSeenAt)}</div>${act(s.sid, 'remove', 'Remove', 'danger')}</div>`,
+      )
+      .join('');
+    return `<div class="card"><p class="muted">Friends' servers ask for your Google key from their setup page; they send you a code to check. Once, add this redirect URI to your OAuth client in Google Cloud: ${pick(hub.relayUri)} (their sign-ins come back through it, to approved servers only).</p>
+${items || '<p class="muted">No requests yet.</p>'}
+<p class="muted">Remove stops new sign-ins for that server at once. To also cut off the accounts already linked there, create a new client secret in Google Cloud, put it in this server's variables, wait 6 hours (approved servers pick it up by themselves, removed ones never do), then delete the old secret. Google lets an unverified app have about 100 users in all.</p></div>`;
+  }
 
   function googleBanner(): string {
     return d.config.googleConfigured ? '' : `<div class="alert warn">${esc(GOOGLE_MISSING)}</div>`;

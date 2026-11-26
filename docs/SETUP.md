@@ -53,7 +53,14 @@ or behind a tunnel (Cloudflare Tunnel, Tailscale Funnel). `BASE_URL` is that pub
 
 ## 2. Google Cloud (about 10 minutes)
 
-**Shortcut: a key someone shares with you.** A friend who already runs this server can let yours use their Google OAuth client. Put the two values they give you in the server's variables as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, send them your server's redirect URI and domain (your server's home page shows both), and skip to part 3 once they have added them. Their Google Cloud project then signs your accounts in, but your mail, calendars and files, and the tokens to reach them, stay on your server only. If their project is ever deleted, make your own key below and replace the two values.
+**Shortcut: a key someone shares with you.** A friend who already runs this server can let yours use their Google OAuth client, and your mail, calendars and files, and the tokens to reach them, still stay on your server only.
+
+- *The easy way (their server shares its key):* set `SHARED_KEY_SERVER` to their server's address (and `SHARED_KEY_OWNER` to their name). Your server's home page then shows **Ask … for the key**: press it, send them the six-digit code it shows, and once they approve, your server picks the key up by itself within a minute. Nothing to copy, and they add nothing to Google Cloud. Skip to part 3.
+- *By hand:* put the two values they give you in the server's variables as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, send them your server's redirect URI and domain (your server's home page shows both), and skip to part 3 once they have added them.
+
+If their project is ever deleted, make your own key below and put its two values in the variables.
+
+**Sharing your own key with friends.** Set `SHARE_GOOGLE_KEY=on` on your server and add one redirect URI to your OAuth client, once: `https://YOUR-DOMAIN/auth/google/relay` (your admin page shows it). Friends' servers then ask for the key from their setup page; you approve each one on your admin page after checking the code they send you. Their sign-ins come back through that one address, which passes them on to approved servers only, so Google Cloud needs no change per friend. **Remove** stops a server's new sign-ins at once; to also cut off the accounts already linked there, create a new client secret in Google Cloud, put it in your variables, wait 6 hours (approved servers pick it up by themselves), then delete the old secret. An unverified Google app is limited to about 100 users in all.
 
 **Sharing your key with a friend.** In your Google Cloud project, add the friend's domain under [Branding](https://console.cloud.google.com/auth/branding) → **Authorized domains**, and their redirect URI to your OAuth client under [Clients](https://console.cloud.google.com/auth/clients) → your client → **Authorized redirect URIs**; **Save** both. Then send them your client ID and client secret privately. Google lets an app it has not reviewed sign in about 100 people in all, and shows them the "unverified app" warning.
 

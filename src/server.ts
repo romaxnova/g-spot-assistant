@@ -10,7 +10,9 @@ import { AccountStore } from './accounts.js';
 import { AuthStore } from './auth/store.js';
 import { ClientRegistry } from './auth/clients.js';
 import { ConnectorOAuthProvider } from './auth/provider.js';
-import { GoogleAuth } from './google/oauth.js';
+import { GoogleAuth, type GoogleOAuthConfig } from './google/oauth.js';
+import { KeyShareHub } from './keyshare/hub.js';
+import { KeyShareMember } from './keyshare/member.js';
 import { GoogleClient } from './google/client.js';
 import { createApp } from './app.js';
 import { SqliteUploadVault, UploadStore } from './uploads.js';
@@ -40,7 +42,7 @@ function main(): void {
   }
   const log = createLogger(config.logLevel);
   const googleRedirectUri = `${config.baseUrl.origin}/auth/google/callback`;
-  if (!config.googleConfigured) {
+  if (!config.googleConfigured && !config.sharedKeyServer) {
     log.warn('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not set: sign-in and account linking are disabled until they are; the home page shows the remaining setup steps', { home: `${config.baseUrl.origin}/`, googleRedirectUri });
   }
   if (config.storageWarning) log.warn(config.storageWarning);
@@ -58,7 +60,14 @@ function main(): void {
     { mcpUrl: config.mcpUrl, consentPath: '/consent', accessTokenTtlSeconds: config.accessTokenTtlSeconds, refreshTokenTtlSeconds: config.refreshTokenTtlSeconds },
     log,
   );
-  const googleAuth = new GoogleAuth({ clientId: config.google.clientId, clientSecret: config.google.clientSecret, redirectUri: googleRedirectUri });
+  // Kept as one object: a Google key shared by another server (SHARED_KEY_SERVER) is filled in here, live.
+  const googleCfg: GoogleOAuthConfig = { clientId: config.google.clientId, clientSecret: config.google.clientSecret, redirectUri: googleRedirectUri };
+  const googleAuth = new GoogleAuth(googleCfg);
+  const keyHub = config.shareGoogleKey && config.googleConfigured ? new KeyShareHub(db, config.baseUrl.origin, config.google, log) : undefined;
+  if (config.shareGoogleKey && !keyHub) log.warn('SHARE_GOOGLE_KEY is on, but this server has no Google key of its own to share (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)');
+  const keyMember = config.sharedKeyServer && !config.googleConfigured ? new KeyShareMember(db, config, googleCfg, log) : undefined;
+  keyMember?.applyStored();
+  keyMember?.start();
   const googleClient = new GoogleClient(accounts, googleAuth, log, { adminUrl: `${config.baseUrl.origin}/admin` });
 
   // Files staged from the Claude chat survive deploys: encrypted in the database for 24 hours.
@@ -76,7 +85,7 @@ function main(): void {
   const toolCtx: ToolContext = { config, accounts, google: googleClient, log, uploads, followups, sensitive, schedules, ocrCache };
   const digest = new DigestScheduler(new DigestSettingsStore(db, config.defaultTimezone), () => toolCtx, log);
   toolCtx.digest = digest;
-  const app = createApp({ config, log, accounts, store, clients, provider, googleAuth, googleClient, tools: allTools, uploads, followups, sensitive, schedules, ocrCache, digest });
+  const app = createApp({ config, log, accounts, store, clients, provider, googleAuth, googleClient, tools: allTools, uploads, followups, sensitive, schedules, ocrCache, digest, keyHub, keyMember });
   // Express 5 calls this callback on failure too (e.g. port already in use), passing the error.
   const server = app.listen(config.port, '0.0.0.0', (err?: Error) => {
     if (err) {
@@ -135,6 +144,7 @@ function main(): void {
     clearInterval(housekeeping);
     clearInterval(digestTimer);
     clearInterval(sendTimer);
+    keyMember?.stop();
     server.close(() => {
       try {
         checkpoint(db, 'TRUNCATE');
